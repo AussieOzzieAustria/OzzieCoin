@@ -17,10 +17,9 @@ BitcoinUnits::BitcoinUnits(QObject *parent):
 QList<BitcoinUnits::Unit> BitcoinUnits::availableUnits()
 {
     QList<BitcoinUnits::Unit> unitlist;
-    unitlist.append(BTC);
-    unitlist.append(mBTC);
-    unitlist.append(uBTC);
-    unitlist.append(SAT);
+    unitlist.append(OZC);
+    unitlist.append(mOZC);
+    unitlist.append(uOZC);
     return unitlist;
 }
 
@@ -28,10 +27,9 @@ bool BitcoinUnits::valid(int unit)
 {
     switch(unit)
     {
-    case BTC:
-    case mBTC:
-    case uBTC:
-    case SAT:
+    case OZC:
+    case mOZC:
+    case uOZC:
         return true;
     default:
         return false;
@@ -42,10 +40,9 @@ QString BitcoinUnits::longName(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("BTC");
-    case mBTC: return QString("mBTC");
-    case uBTC: return QString::fromUtf8("µBTC (bits)");
-    case SAT: return QString("Satoshi (sat)");
+    case OZC: return QString("OZC");
+    case mOZC: return QString("mOZC");
+    case uOZC: return QString::fromUtf8("µOZC (bits)");
     default: return QString("???");
     }
 }
@@ -54,8 +51,7 @@ QString BitcoinUnits::shortName(int unit)
 {
     switch(unit)
     {
-    case uBTC: return QString::fromUtf8("bits");
-    case SAT: return QString("sat");
+    case uOZC: return QString::fromUtf8("bits");
     default: return longName(unit);
     }
 }
@@ -64,10 +60,9 @@ QString BitcoinUnits::description(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("Bitcoins");
-    case mBTC: return QString("Milli-Bitcoins (1 / 1" THIN_SP_UTF8 "000)");
-    case uBTC: return QString("Micro-Bitcoins (bits) (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
-    case SAT: return QString("Satoshi (sat) (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+    case OZC: return QString("Bitcoins");
+    case mOZC: return QString("Milli-Bitcoins (1 / 1" THIN_SP_UTF8 "000)");
+    case uOZC: return QString("Micro-Bitcoins (bits) (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
     default: return QString("???");
     }
 }
@@ -76,11 +71,10 @@ qint64 BitcoinUnits::factor(int unit)
 {
     switch(unit)
     {
-    case BTC: return 100000000;
-    case mBTC: return 100000;
-    case uBTC: return 100;
-    case SAT: return 1;
-    default: return 100000000;
+    case OZC: return 100000;
+    case mOZC: return 100;
+    case uOZC: return 1;
+    default: return 100000;
     }
 }
 
@@ -88,10 +82,9 @@ int BitcoinUnits::decimals(int unit)
 {
     switch(unit)
     {
-    case BTC: return 8;
-    case mBTC: return 5;
-    case uBTC: return 2;
-    case SAT: return 0;
+    case OZC: return 5;
+    case mOZC: return 2;
+    case uOZC: return 0;
     default: return 0;
     }
 }

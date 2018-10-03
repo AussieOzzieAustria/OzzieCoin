@@ -57,7 +57,7 @@
       <item>
        <widget class="QValidatedLineEdit" name="payTo">
         <property name="toolTip">
-         <string>The Bitcoin address to send the payment to</string>
+         <string>The Ozziecoin address to send the payment to</string>
         </property>
        </widget>
       </item>
@@ -1261,6 +1261,7 @@
    <class>BitcoinAmountField</class>
    <extends>QLineEdit</extends>
    <header>qt/bitcoinamountfield.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <tabstops>

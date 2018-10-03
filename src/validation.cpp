@@ -244,6 +244,12 @@ CBlockPolicyEstimator feeEstimator;
 CTxMemPool mempool(&feeEstimator);
 std::atomic_bool g_is_mempool_loaded{false};
 
+/**
+ * Returns true if there are nRequired or more blocks of minVersion or above
+ * in the last Consensus::Params::nMajorityWindow blocks, starting at pstart and going backwards.
+ */
+static bool IsSuperMajority(int minVersion, const CBlockIndex* pstart, unsigned nRequired, const Consensus::Params& consensusParams);
+
 /** Constant stuff for coinbase transactions we create: */
 CScript COINBASE_FLAGS;
 
@@ -1152,14 +1158,12 @@ bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const CBlockIndex* pindex
 
 CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams)
 {
-    int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
-    // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64)
-        return 0;
+    CAmount nSubsidy = 0;
 
-    CAmount nSubsidy = 50 * COIN;
-    // Subsidy is cut in half every 210,000 blocks which will occur approximately every 4 years.
-    nSubsidy >>= halvings;
+    if(nHeight <= 100) nSubsidy = 115069000;
+    if(nHeight > 1152) nSubsidy = 625;
+
+    nSubsidy *= COIN;
     return nSubsidy;
 }
 
@@ -1738,18 +1742,7 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
     AssertLockHeld(cs_main);
 
     unsigned int flags = SCRIPT_VERIFY_NONE;
-
-    // BIP16 didn't become active until Apr 1 2012 (on mainnet, and
-    // retroactively applied to testnet)
-    // However, only one historical block violated the P2SH rules (on both
-    // mainnet and testnet), so for simplicity, always leave P2SH
-    // on except for the one violating block.
-    if (consensusparams.BIP16Exception.IsNull() || // no bip16 exception on this chain
-        pindex->phashBlock == nullptr || // this is a new candidate block, eg from TestBlockValidity()
-        *pindex->phashBlock != consensusparams.BIP16Exception) // this block isn't the historical exception
-    {
-        flags |= SCRIPT_VERIFY_P2SH;
-    }
+    flags |= SCRIPT_VERIFY_P2SH;
 
     // Enforce WITNESS rules whenever P2SH is in effect (and the segwit
     // deployment is defined).
@@ -1757,6 +1750,7 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
         flags |= SCRIPT_VERIFY_WITNESS;
     }
 
+    /*
     // Start enforcing the DERSIG (BIP66) rule
     if (pindex->nHeight >= consensusparams.BIP66Height) {
         flags |= SCRIPT_VERIFY_DERSIG;
@@ -1767,9 +1761,13 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
         flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
     }
 
-    // Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic.
+    */
+
+    // Start enforcing BIP65 (CHECKLOCKTIMEVERIFY) BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic.
     if (VersionBitsState(pindex->pprev, consensusparams, Consensus::DEPLOYMENT_CSV, versionbitscache) == ThresholdState::ACTIVE) {
+        flags |= SCRIPT_VERIFY_DERSIG;
         flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
+        flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
     }
 
     if (IsNullDummyEnabled(pindex->pprev, consensusparams)) {
@@ -3208,6 +3206,26 @@ std::vector<unsigned char> GenerateCoinbaseCommitment(CBlock& block, const CBloc
     return commitment;
 }
 
+double ConvertBitsToDouble(unsigned int nBits){
+    int nShift = (nBits >> 24) & 0xff;
+
+    double dDiff =
+        (double)0x0000ffff / (double)(nBits & 0x00ffffff);
+
+    while (nShift < 29)
+    {
+        dDiff *= 256.0;
+        nShift++;
+    }
+    while (nShift > 29)
+    {
+        dDiff /= 256.0;
+        nShift--;
+    }
+
+    return dDiff;
+}
+
 /** Context-dependent validity checks.
  *  By "context", we mean only the previous block headers, but not the UTXO
  *  set; UTXO-related validity checks are done in ConnectBlock().
@@ -3221,11 +3239,21 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 {
     assert(pindexPrev != nullptr);
     const int nHeight = pindexPrev->nHeight + 1;
-
+/*
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
+    LogPrintf("Block nBits: %ld\n", block.nBits);
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
+        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work (DGW2");
+*/
+    // Check proof of work
+    const Consensus::Params& consensusParams = params.GetConsensus();
+    unsigned int nBitsNext = GetNextWorkRequired(pindexPrev, &block, consensusParams);
+    double n1 = ConvertBitsToDouble(block.nBits);
+    double n2 = ConvertBitsToDouble(nBitsNext);
+
+    if (abs(n1-n2) > n1*0.005)
+        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work (DGW2)");
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {
@@ -3247,11 +3275,19 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
     // Reject outdated version blocks when 95% (75% on testnet) of the network has upgraded:
     // check for version 2, 3 and 4 upgrades
-    if((block.nVersion < 2 && nHeight >= consensusParams.BIP34Height) ||
-       (block.nVersion < 3 && nHeight >= consensusParams.BIP66Height) ||
-       (block.nVersion < 4 && nHeight >= consensusParams.BIP65Height))
+    if(block.nVersion < 2 && nHeight >= consensusParams.BIP34Height)
             return state.Invalid(false, REJECT_OBSOLETE, strprintf("bad-version(0x%08x)", block.nVersion),
                                  strprintf("rejected nVersion=0x%08x block", block.nVersion));
+
+    // Reject block.nVersion=2 blocks when 95% (75% on testnet) of the network has upgraded:
+    if (block.nVersion < 3 && IsSuperMajority(4, pindexPrev, consensusParams.nMajorityRejectBlockOutdated, consensusParams))
+        return state.Invalid(error("%s : rejected nVersion=2 block", __func__),
+                             REJECT_OBSOLETE, "bad-version");
+
+    // Reject block.nVersion=3 blocks when 95% (75% on testnet) of the network has upgraded:
+    if (block.nVersion < 4 && IsSuperMajority(4, pindexPrev, consensusParams.nMajorityRejectBlockOutdated, consensusParams))
+        return state.Invalid(error("%s : rejected nVersion=3 block", __func__),
+                             REJECT_OBSOLETE, "bad-version");
 
     return true;
 }
@@ -3402,6 +3438,18 @@ bool CChainState::AcceptBlockHeader(const CBlockHeader& block, CValidationState&
     CheckBlockIndex(chainparams.GetConsensus());
 
     return true;
+}
+
+static bool IsSuperMajority(int minVersion, const CBlockIndex* pstart, unsigned nRequired, const Consensus::Params& consensusParams)
+{
+    unsigned int nFound = 0;
+    for (int i = 0; i < consensusParams.nMajorityWindow && nFound < nRequired && pstart != nullptr; i++)
+    {
+        if (pstart->nVersion >= minVersion)
+            ++nFound;
+        pstart = pstart->pprev;
+    }
+    return (nFound >= nRequired);
 }
 
 // Exposed wrapper for AcceptBlockHeader

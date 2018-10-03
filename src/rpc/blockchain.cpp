@@ -1119,23 +1119,22 @@ static UniValue verifychain(const JSONRPCRequest& request)
 }
 
 /** Implementation of IsSuperMajority with better feedback */
-static UniValue SoftForkMajorityDesc(int version, CBlockIndex* pindex, const Consensus::Params& consensusParams)
+static UniValue SoftForkMajorityDesc(int minVersion, CBlockIndex* pindex, int nRequired, const Consensus::Params& consensusParams)
 {
-    UniValue rv(UniValue::VOBJ);
-    bool activated = false;
-    switch(version)
+    int nFound = 0;
+    CBlockIndex* pstart = pindex;
+    for (int i = 0; i < consensusParams.nMajorityWindow && pstart != nullptr; i++)
     {
-        case 2:
-            activated = pindex->nHeight >= consensusParams.BIP34Height;
-            break;
-        case 3:
-            activated = pindex->nHeight >= consensusParams.BIP66Height;
-            break;
-        case 4:
-            activated = pindex->nHeight >= consensusParams.BIP65Height;
-            break;
+        if (pstart->nVersion >= minVersion)
+            ++nFound;
+        pstart = pstart->pprev;
     }
-    rv.pushKV("status", activated);
+
+    UniValue rv(UniValue::VOBJ);
+    rv.pushKV("status", nFound >= nRequired);
+    rv.pushKV("found", nFound);
+    rv.pushKV("required", nRequired);
+    rv.pushKV("window", consensusParams.nMajorityWindow);
     return rv;
 }
 
@@ -1144,7 +1143,8 @@ static UniValue SoftForkDesc(const std::string &name, int version, CBlockIndex* 
     UniValue rv(UniValue::VOBJ);
     rv.pushKV("id", name);
     rv.pushKV("version", version);
-    rv.pushKV("reject", SoftForkMajorityDesc(version, pindex, consensusParams));
+    rv.pushKV("enforce", SoftForkMajorityDesc(version, pindex, consensusParams.nMajorityEnforceBlockUpgrade, consensusParams));
+    rv.pushKV("reject", SoftForkMajorityDesc(version, pindex, consensusParams.nMajorityRejectBlockOutdated, consensusParams));
     return rv;
 }
 
